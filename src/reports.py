@@ -1,0 +1,72 @@
+import functools
+import json
+import logging
+from datetime import datetime, timedelta
+
+import pandas as pd
+
+logger = logging.getLogger("reports")
+logger.setLevel(logging.DEBUG)
+file_handler = logging.FileHandler(r"C:/Users/Admin/PycharmProjects/Course_work_1/logs/reports.log", mode="w")
+file_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
+
+def report_to_file_default(func):
+    """Записывает в файл результат, который возвращает функция, формирующая отчет."""
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        result = func(*args, **kwargs)
+        with open("function_operation_report.txt", "w") as file:
+            file.write(str(result))
+        logger.info(f"Записан результат работы функции {func}")
+        return result
+
+    return wrapper
+
+
+def report_to_file(filename="function_operation_report.txt"):
+    """Записывает в переданный файл результат, который возвращает функция, формирующая отчет."""
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            result = func(*args, **kwargs)
+            with open(filename, "w") as file:
+                file.write(str(result))
+            logger.info(f"Записан результат работы функции {func} в файл {filename}")
+            return result
+
+        return wrapper
+
+    return decorator
+
+
+@report_to_file_default
+def spending_by_workday(transactions: pd.DataFrame, date=None) -> str:
+    """Функция выводит средние траты в рабочий и в выходной день за последние три месяца (от переданной даты)."""
+    try:
+        transactions["Дата операции"] = pd.to_datetime(transactions["Дата операции"], format="%d.%m.%Y %H:%M:%S")
+        if date is None:
+            date = datetime.now()
+        else:
+            date = datetime.strptime(date, "%Y.%m.%d")
+        weekend_days = [5, 6]
+        start_date = date - timedelta(days=date.day) - timedelta(days=3 * 30)
+        filtered_transactions = transactions[
+            (transactions["Дата операции"] >= start_date) & (transactions["Дата операции"] <= date)
+        ]
+        filtered_transactions = filtered_transactions.copy()
+        filtered_transactions["День недели"] = filtered_transactions["Дата операции"].dt.dayofweek
+        filtered_transactions["Тип дня"] = "Рабочий"
+        filtered_transactions.loc[filtered_transactions["День недели"].isin(weekend_days), "Тип дня"] = "Выходной"
+        grouped_transactions = filtered_transactions.groupby("Тип дня")["Сумма операции"].mean()
+        logger.info(f"средние траты за последние три месяца от {date} по рабочим и выходным дням")
+        return json.dumps(grouped_transactions.to_dict(), ensure_ascii=False, indent=4)
+    except Exception as e:
+        print(f"Возникла ошибка {e}")
+        logger.error(f"Возникла ошибка {e}")
+        return ""
